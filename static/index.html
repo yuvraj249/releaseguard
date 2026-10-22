@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReleaseGuard - CI/CD Test Triage & Release Decision Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: { 500: '#6366f1', 600: '#4f46e5' },
+              danger: { 500: '#ef4444', 600: '#dc2626' },
+              success: { 500: '#10b981', 600: '#059669' },
+              warning: { 500: '#f59e0b', 600: '#d97706' }
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Inter', sans-serif; }
+      pre, code { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col">
+
+    <!-- Navbar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-indigo-500/30">
+                    RG
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="font-bold text-lg text-white tracking-tight">ReleaseGuard</h1>
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">APM Decision Engine</span>
+                    </div>
+                    <p class="text-xs text-slate-400">CI/CD Flaky Test vs. Regression Bug Triage</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-4">
+                <div class="hidden md:flex items-center space-x-2 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Engine: <strong class="text-slate-200">Hybrid Semantic + Git Diff</strong></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+
+        <!-- Scenario Quick-Switch Bar -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 shadow-sm">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Preset Pre-Release Scenarios (Live Test Runs)</h2>
+                    <p class="text-xs text-slate-500">Click to simulate real pre-deployment CI/CD test failure logs:</p>
+                </div>
+                <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <button onclick="loadScenario('flake_dom_timeout')" id="btn-flake" class="scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 transition flex items-center space-x-1.5">
+                        <span>🟡 Cypress DOM Flake</span>
+                    </button>
+                    <button onclick="loadScenario('real_regression_blocker')" id="btn-blocker" class="scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition flex items-center space-x-1.5">
+                        <span>🔴 Playwright 500 Crash</span>
+                    </button>
+                    <button onclick="loadScenario('transient_network_timeout')" id="btn-transient" class="scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition flex items-center space-x-1.5">
+                        <span>🔄 Stripe Mock 504 Timeout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Left Column: Inputs & Signals (5 cols) -->
+            <div class="lg:col-span-5 space-y-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h3 class="font-semibold text-sm text-slate-200 flex items-center space-x-2">
+                            <span>📋</span>
+                            <span>CI Pipeline Inputs</span>
+                        </h3>
+                        <span id="framework-tag" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Cypress E2E</span>
+                    </div>
+
+                    <!-- PR Info -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Pull Request Title</label>
+                        <input id="pr-title" type="text" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </div>
+
+                    <!-- PR Files Touched -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">PR Files Touched (Git Diff)</label>
+                        <div id="pr-files-pills" class="flex flex-wrap gap-1.5 mb-2"></div>
+                        <input id="pr-files-input" type="text" placeholder="Comma separated paths" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400 font-mono focus:outline-none focus:border-indigo-500">
+                    </div>
+
+                    <!-- Failing Spec File -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Failing Spec / Test Path</label>
+                        <input id="test-name" type="text" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500">
+                    </div>
+
+                    <!-- Test Log Trace -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">CI Test Failure Log / Stack Trace</label>
+                        <textarea id="test-log" rows="7" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-red-300 font-mono focus:outline-none focus:border-indigo-500"></textarea>
+                    </div>
+
+                    <!-- Flakiness Slider -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-medium text-slate-400">Historical Flake Rate (Last 30 Days)</label>
+                            <span id="flake-val" class="text-xs font-bold text-amber-400">38.5%</span>
+                        </div>
+                        <input id="flake-slider" type="range" min="0" max="100" step="0.5" value="38.5" oninput="document.getElementById('flake-val').innerText = this.value + '%'" class="w-full accent-indigo-500 cursor-pointer">
+                    </div>
+
+                    <button onclick="evaluateRisk()" class="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold text-xs text-white shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+                        <span>⚡</span>
+                        <span>Run Release Decision Engine</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Decision & Rationale (7 cols) -->
+            <div class="lg:col-span-7 space-y-4">
+
+                <!-- Decision Card -->
+                <div id="decision-card" class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-md transition-all">
+
+                    <!-- Verdict Banner -->
+                    <div id="verdict-banner" class="p-4 rounded-xl border flex items-center justify-between mb-6 bg-emerald-500/10 border-emerald-500/30">
+                        <div class="flex items-center space-x-3">
+                            <div id="verdict-icon" class="text-3xl">🟡</div>
+                            <div>
+                                <div class="text-xs uppercase font-bold tracking-wider text-slate-400">Automated Release Verdict</div>
+                                <h2 id="verdict-title" class="text-xl font-extrabold text-emerald-400 tracking-tight">PROCEED WITH QUARANTINE</h2>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-slate-400">Confidence</div>
+                            <div id="confidence-val" class="text-lg font-black text-slate-200">92%</div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Gauge & Metrics Grid -->
+                    <div class="grid grid-cols-3 gap-3 mb-6">
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 text-center">
+                            <div class="text-[11px] text-slate-400 uppercase font-semibold">Risk Score</div>
+                            <div id="risk-score-val" class="text-2xl font-black text-emerald-400 mt-0.5">14<span class="text-xs font-normal text-slate-500">/100</span></div>
+                            <div id="risk-label" class="text-[10px] text-emerald-500 font-medium">Low Outage Risk</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 text-center">
+                            <div class="text-[11px] text-slate-400 uppercase font-semibold">Git Diff Correlation</div>
+                            <div id="diff-corr-val" class="text-sm font-bold text-slate-200 mt-2">0% (Unrelated)</div>
+                            <div class="text-[10px] text-slate-500">No overlap with PR</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 text-center">
+                            <div class="text-[11px] text-slate-400 uppercase font-semibold">Classification</div>
+                            <div id="category-val" class="text-xs font-semibold text-amber-300 mt-2 truncate">DOM Timing Flake</div>
+                            <div class="text-[10px] text-slate-500">Hydration lag</div>
+                        </div>
+                    </div>
+
+                    <!-- Rationale Sections -->
+                    <div class="space-y-4">
+                        <div class="bg-slate-950/80 border border-slate-800/60 rounded-lg p-3.5">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1.5">
+                                <span>🔍</span>
+                                <span>Root Cause Analysis</span>
+                            </h4>
+                            <p id="root-cause-text" class="text-xs text-slate-300 leading-relaxed"></p>
+                        </div>
+
+                        <div class="bg-slate-950/80 border border-slate-800/60 rounded-lg p-3.5">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-1 flex items-center space-x-1.5">
+                                <span>⚖️</span>
+                                <span>PM Trade-off Rationale (Velocity vs. Risk)</span>
+                            </h4>
+                            <p id="trade-off-text" class="text-xs text-slate-300 leading-relaxed"></p>
+                        </div>
+
+                        <div class="bg-slate-950/80 border border-slate-800/60 rounded-lg p-3.5">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1 flex items-center space-x-1.5">
+                                <span>🎯</span>
+                                <span>Recommended Engineering Action</span>
+                            </h4>
+                            <p id="action-text" class="text-xs text-slate-300 leading-relaxed"></p>
+                        </div>
+                    </div>
+
+                    <!-- Action Export Bar -->
+                    <div class="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+                        <div class="text-xs text-slate-400">Next Step: Post incident record to Jira / Slack</div>
+                        <button onclick="copyJiraTicket()" id="copy-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition flex items-center space-x-1.5">
+                            <span>📋 Copy Jira Ticket</span>
+                        </button>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        let currentScenarios = {};
+        let activeJiraTicket = null;
+
+        async function init() {
+            try {
+                const res = await fetch('/api/scenarios');
+                currentScenarios = await res.json();
+                loadScenario('flake_dom_timeout');
+            } catch (err) {
+                console.error('Failed to load scenarios', err);
+            }
+        }
+
+        function loadScenario(key) {
+            const sc = currentScenarios[key];
+            if (!sc) return;
+
+            document.querySelectorAll('.scenario-btn').forEach(b => {
+                b.className = 'scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition flex items-center space-x-1.5';
+            });
+
+            const activeBtn = document.getElementById(key === 'flake_dom_timeout' ? 'btn-flake' : (key === 'real_regression_blocker' ? 'btn-blocker' : 'btn-transient'));
+            if (activeBtn) {
+                if (key === 'flake_dom_timeout') activeBtn.className = 'scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 transition flex items-center space-x-1.5';
+                else if (key === 'real_regression_blocker') activeBtn.className = 'scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 transition flex items-center space-x-1.5';
+                else activeBtn.className = 'scenario-btn px-3 py-2 text-xs font-medium rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 transition flex items-center space-x-1.5';
+            }
+
+            document.getElementById('pr-title').value = sc.pr_title;
+            document.getElementById('test-name').value = sc.test_name;
+            document.getElementById('test-log').value = sc.test_log;
+            document.getElementById('framework-tag').innerText = sc.framework;
+            document.getElementById('flake-slider').value = sc.historical_flake_rate;
+            document.getElementById('flake-val').innerText = sc.historical_flake_rate + '%';
+            document.getElementById('pr-files-input').value = sc.pr_files.join(', ');
+
+            renderFilePills(sc.pr_files);
+            evaluateRisk();
+        }
+
+        function renderFilePills(files) {
+            const container = document.getElementById('pr-files-pills');
+            container.innerHTML = files.map(f => `<span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300">${f}</span>`).join('');
+        }
+
+        async function evaluateRisk() {
+            const testLog = document.getElementById('test-log').value;
+            const prTitle = document.getElementById('pr-title').value;
+            const filesStr = document.getElementById('pr-files-input').value;
+            const prFiles = filesStr.split(',').map(s => s.trim()).filter(Boolean);
+            const flakeRate = parseFloat(document.getElementById('flake-slider').value);
+
+            renderFilePills(prFiles);
+
+            try {
+                const res = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        test_log: testLog,
+                        pr_files: prFiles,
+                        pr_title: prTitle,
+                        historical_flake_rate: flakeRate
+                    })
+                });
+
+                const data = await res.json();
+                renderDecision(data);
+            } catch (err) {
+                console.error('Evaluation failed', err);
+            }
+        }
+
+        function renderDecision(d) {
+            activeJiraTicket = d.jira_ticket;
+
+            const banner = document.getElementById('verdict-banner');
+            const title = document.getElementById('verdict-title');
+            const icon = document.getElementById('verdict-icon');
+            const riskVal = document.getElementById('risk-score-val');
+            const riskLabel = document.getElementById('risk-label');
+
+            title.innerText = d.verdict_badge;
+            document.getElementById('confidence-val').innerText = d.confidence + '%';
+            document.getElementById('category-val').innerText = d.category;
+            document.getElementById('root-cause-text').innerText = d.root_cause;
+            document.getElementById('trade-off-text').innerText = d.trade_off;
+            document.getElementById('action-text').innerText = d.action;
+
+            if (d.has_correlation) {
+                document.getElementById('diff-corr-val').innerText = 'HIGH (' + d.correlated_domains.join(', ') + ')';
+                document.getElementById('diff-corr-val').className = 'text-sm font-bold text-red-400 mt-2';
+            } else {
+                document.getElementById('diff-corr-val').innerText = '0% (Unrelated)';
+                document.getElementById('diff-corr-val').className = 'text-sm font-bold text-slate-200 mt-2';
+            }
+
+            banner.className = 'p-4 rounded-xl border flex items-center justify-between mb-6 ';
+            if (d.verdict_color === 'red') {
+                banner.classList.add('bg-red-500/10', 'border-red-500/30');
+                title.className = 'text-xl font-extrabold text-red-400 tracking-tight';
+                icon.innerText = '🛑';
+                riskVal.innerHTML = `${d.risk_score}<span class="text-xs font-normal text-slate-500">/100</span>`;
+                riskVal.className = 'text-2xl font-black text-red-400 mt-0.5';
+                riskLabel.innerText = 'CRITICAL OUTAGE RISK';
+                riskLabel.className = 'text-[10px] text-red-500 font-bold';
+            } else if (d.verdict_color === 'green') {
+                banner.classList.add('bg-emerald-500/10', 'border-emerald-500/30');
+                title.className = 'text-xl font-extrabold text-emerald-400 tracking-tight';
+                icon.innerText = '🟢';
+                riskVal.innerHTML = `${d.risk_score}<span class="text-xs font-normal text-slate-500">/100</span>`;
+                riskVal.className = 'text-2xl font-black text-emerald-400 mt-0.5';
+                riskLabel.innerText = 'LOW OUTAGE RISK';
+                riskLabel.className = 'text-[10px] text-emerald-400 font-bold';
+            } else {
+                banner.classList.add('bg-amber-500/10', 'border-amber-500/30');
+                title.className = 'text-xl font-extrabold text-amber-400 tracking-tight';
+                icon.innerText = '🟡';
+                riskVal.innerHTML = `${d.risk_score}<span class="text-xs font-normal text-slate-500">/100</span>`;
+                riskVal.className = 'text-2xl font-black text-amber-400 mt-0.5';
+                riskLabel.innerText = 'MODERATE UNCERTAINTY';
+                riskLabel.className = 'text-[10px] text-amber-400 font-bold';
+            }
+        }
+
+        function copyJiraTicket() {
+            if (!activeJiraTicket) return;
+            const text = `SUMMARY: ${activeJiraTicket.summary}\nPRIORITY: ${activeJiraTicket.priority}\nLABELS: ${activeJiraTicket.labels.join(', ')}\n\n${activeJiraTicket.description}`;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copy-btn');
+                const old = btn.innerHTML;
+                btn.innerHTML = '<span>✅ Copied to Clipboard!</span>';
+                setTimeout(() => btn.innerHTML = old, 2000);
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

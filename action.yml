@@ -1,0 +1,27 @@
+name: 'ReleaseGuard: CI/CD Test Triage & Release Decision Engine'
+description: 'Intelligent triage for flaky tests vs real regression bugs in CI/CD pipelines'
+author: 'Yuvraj Bisht'
+
+inputs:
+  log-file:
+    description: 'Path to the test output/failure log'
+    required: true
+  flake-rate:
+    description: 'Historical flake rate of the failing test (percentage)'
+    required: false
+    default: '15.0'
+  fail-on-block:
+    description: 'Whether to exit with code 1 if a Hard Block is detected'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run ReleaseGuard Engine
+      shell: bash
+      run: |
+        python3 ${{ github.action_path }}/cli.py \
+          --log-file "${{ inputs.log-file }}" \
+          --flake-rate "${{ inputs.flake-rate }}" \
+          --auto-git
